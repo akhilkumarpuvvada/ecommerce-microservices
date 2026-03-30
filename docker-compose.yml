@@ -110,3 +110,16 @@ services:
       PORT: 3004
     depends_on:
       - kafka
+
+  # ─────────────────────────────────────────────
+  # React Frontend — served by nginx on port 80
+  # nginx also proxies /orders and /inventory → api-gateway
+  # Visit: http://localhost
+  # ─────────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - api-gateway
