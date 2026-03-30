@@ -1,0 +1,14 @@
+{
+  "name": "notification-service",
+  "version": "1.0.0",
+  "description": "Sends notifications — purely reactive, no business logic",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "kafkajs": "^2.2.4"
+  }
+}
