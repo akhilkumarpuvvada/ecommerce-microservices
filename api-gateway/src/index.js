@@ -13,9 +13,13 @@
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const morgan = require('morgan');
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// CORS — allow the React frontend (any origin in dev, lock down in prod)
+app.use(cors());
 
 // HTTP request logger — shows every incoming request
 app.use(morgan('dev'));
@@ -36,6 +40,21 @@ app.use(
       error: (err, req, res) => {
         console.error('[Gateway] Order service unreachable:', err.message);
         res.status(503).json({ error: 'Order service unavailable' });
+      },
+    },
+  })
+);
+
+// All /inventory/* requests → Inventory Service
+app.use(
+  '/inventory',
+  createProxyMiddleware({
+    target: process.env.INVENTORY_SERVICE_URL || 'http://localhost:3003',
+    changeOrigin: true,
+    on: {
+      error: (err, req, res) => {
+        console.error('[Gateway] Inventory service unreachable:', err.message);
+        res.status(503).json({ error: 'Inventory service unavailable' });
       },
     },
   })
