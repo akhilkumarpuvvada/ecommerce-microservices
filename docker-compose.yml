@@ -1,0 +1,111 @@
+version: '3.8'
+
+services:
+  # ─────────────────────────────────────────────
+  # Zookeeper — Kafka needs this to manage brokers
+  # ─────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  # ─────────────────────────────────────────────
+  # Kafka Broker — the message bus between services
+  # In production: 3+ brokers for high availability
+  # Here: single broker is enough to learn the patterns
+  # ─────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"       # used by services running on host machine
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # PLAINTEXT_HOST → for services outside Docker (our Node.js apps)
+      # PLAINTEXT       → for services inside Docker network
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1   # 1 because single broker
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'      # topics auto-created on first use
+
+  # ─────────────────────────────────────────────
+  # Kafka UI — visual dashboard to see topics,
+  # messages, consumer groups in real time
+  # Visit: http://localhost:8080
+  # ─────────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+  # ─────────────────────────────────────────────
+  # Our Microservices — each runs independently
+  # We use 'build' so Docker builds from local code
+  # ─────────────────────────────────────────────
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      ORDER_SERVICE_URL: http://order-service:3001
+    depends_on:
+      - kafka
+
+  order-service:
+    build: ./order-service
+    container_name: order-service
+    ports:
+      - "3001:3001"
+    environment:
+      KAFKA_BROKER: kafka:29092
+      PORT: 3001
+    depends_on:
+      - kafka
+
+  payment-service:
+    build: ./payment-service
+    container_name: payment-service
+    ports:
+      - "3002:3002"
+    environment:
+      KAFKA_BROKER: kafka:29092
+      PORT: 3002
+    depends_on:
+      - kafka
+
+  inventory-service:
+    build: ./inventory-service
+    container_name: inventory-service
+    ports:
+      - "3003:3003"
+    environment:
+      KAFKA_BROKER: kafka:29092
+      PORT: 3003
+    depends_on:
+      - kafka
+
+  notification-service:
+    build: ./notification-service
+    container_name: notification-service
+    ports:
+      - "3004:3004"
+    environment:
+      KAFKA_BROKER: kafka:29092
+      PORT: 3004
+    depends_on:
+      - kafka
