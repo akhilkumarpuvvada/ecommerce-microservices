@@ -4,8 +4,8 @@
  * Responsibilities:
  *  - Accept order creation requests from API Gateway
  *  - Save order to its own database
- *  - (Next commit) Publish 'order.created' event to Kafka
- *  - (Later) Listen for payment + inventory results to complete the Saga
+ *  - Publish 'order.created' event to Kafka
+ *  - Run Saga consumer: listen for payment + inventory results to confirm/fail orders
  */
 
 const express = require('express');
@@ -13,6 +13,7 @@ const morgan = require('morgan');
 const { v4: uuidv4 } = require('uuid');
 const db = require('./db');
 const { connectProducer, publishEvent } = require('./kafka');
+const { startSagaConsumer } = require('./sagaConsumer');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -89,24 +90,25 @@ app.get('/orders/:id', (req, res) => {
 // ─────────────────────────────────────────────
 // GET /orders — List all orders
 // ─────────────────────────────────────────────
-app.get('/orders', (req, res) => {
+app.get('/orders', (_req, res) => {
   const orders = db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all();
   res.json(orders);
 });
 
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'order-service' });
 });
 
 // Connect Kafka producer first, then start HTTP server
 // We wait for Kafka to be ready before accepting requests
-connectProducer()
+// Start Kafka producer + saga consumer, then open HTTP server
+Promise.all([connectProducer(), startSagaConsumer()])
   .then(() => {
     app.listen(PORT, () => {
       console.log(`[Order Service] Running on port ${PORT}`);
     });
   })
   .catch((err) => {
-    console.error('[Order Service] Failed to connect Kafka producer:', err);
+    console.error('[Order Service] Failed to start:', err);
     process.exit(1);
   });
