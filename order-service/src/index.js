@@ -12,6 +12,7 @@ const express = require('express');
 const morgan = require('morgan');
 const { v4: uuidv4 } = require('uuid');
 const db = require('./db');
+const { connectProducer, publishEvent } = require('./kafka');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -22,7 +23,7 @@ app.use(morgan('dev'));
 // ─────────────────────────────────────────────
 // POST /orders — Create a new order
 // ─────────────────────────────────────────────
-app.post('/orders', (req, res) => {
+app.post('/orders', async (req, res) => {
   const { customer_id, product_id, quantity, amount } = req.body;
 
   // Basic validation
@@ -49,8 +50,25 @@ app.post('/orders', (req, res) => {
 
   console.log(`[Order Service] Order created: ${order.id} | status: PENDING`);
 
-  // TODO (next commit): publish order.created event to Kafka
-  // So payment-service and inventory-service can start their work
+  // ─────────────────────────────────────────────────────────────────
+  // PUBLISH EVENT to Kafka
+  //
+  // This is the core of event-driven architecture.
+  // We don't call payment-service or inventory-service directly.
+  // We just announce: "an order was created" — anyone who cares will react.
+  //
+  // Benefits:
+  //  - Order service doesn't need to know who handles payment/inventory
+  //  - If payment-service is down, the event waits in Kafka (durable)
+  //  - Adding a new service (e.g. fraud detection) = just subscribe, no code change here
+  // ─────────────────────────────────────────────────────────────────
+  await publishEvent('order.created', {
+    orderId:    order.id,
+    customerId: order.customer_id,
+    productId:  order.product_id,
+    quantity:   order.quantity,
+    amount:     order.amount,
+  });
 
   res.status(201).json(order);
 });
@@ -80,6 +98,15 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'order-service' });
 });
 
-app.listen(PORT, () => {
-  console.log(`[Order Service] Running on port ${PORT}`);
-});
+// Connect Kafka producer first, then start HTTP server
+// We wait for Kafka to be ready before accepting requests
+connectProducer()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`[Order Service] Running on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('[Order Service] Failed to connect Kafka producer:', err);
+    process.exit(1);
+  });
